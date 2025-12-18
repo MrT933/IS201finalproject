@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polygon Merge</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Tone.js for sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        #game-container {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            background-color: #161b22;
+            padding: 1.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        #game-board-area {
+            position: relative;
+            width: 100%;
+            padding-bottom: 100%;
+        }
+
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 1rem;
+            background-color: #21262d;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .pile-slot {
+            background: linear-gradient(145deg, #1f2937, #111827);
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .pile-tile {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .pile-tile:active {
+            transform: scale(0.9);
+        }
+
+        .floating-score {
+            position: absolute;
+            font-weight: 900;
+            color: #d2ff90;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: none;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+            animation: floatup 1.5s forwards;
+        }
+
+        @keyframes floatup {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-60px) scale(1.2); }
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        .modal-content {
+            background-color: #161b22;
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8);
+            max-width: 90%;
+            width: 400px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Leaderboard styling */
+        .leaderboard-row {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background 0.2s;
+        }
+        .leaderboard-row:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div class="flex flex-col items-center">
+        <h1 class="text-3xl font-black text-center text-white uppercase tracking-tighter mb-1">Polygon Merge</h1>
+        <div class="h-1 w-24 bg-indigo-500 rounded-full mb-2"></div>
+    </div>
+
+    <!-- Scoreboard -->
+    <div class="grid grid-cols-3 gap-3 text-center p-3 rounded-xl bg-gray-900/80 border border-gray-800">
+        <div class="flex flex-col">
+            <span class="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Score</span>
+            <span id="score" class="text-2xl font-black text-green-400">0</span>
+        </div>
+        <div class="flex flex-col border-x border-gray-800">
+            <span class="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Best</span>
+            <span id="high-score" class="text-2xl font-black text-yellow-400">0</span>
+        </div>
+        <div class="flex items-center justify-center">
+            <button id="new-game-btn" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-lg shadow-lg active:scale-95 transition-all uppercase tracking-tight">
+                Reset
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Board Area -->
+    <div id="game-board-area">
+        <canvas id="game-canvas"></canvas>
+        <div id="animation-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+    </div>
+
+    <!-- Enhanced Bottom Half -->
+    <div class="flex flex-col gap-4">
+        <!-- Tile Piles -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col gap-2">
+                <span class="text-[10px] uppercase font-bold text-gray-500 tracking-widest text-center">Pile Alpha</span>
+                <div class="pile-slot aspect-square p-3 shadow-inner">
+                    <div id="pile-1" class="pile-tile"></div>
+                </div>
+            </div>
+            <div class="flex flex-col gap-2">
+                <span class="text-[10px] uppercase font-bold text-gray-500 tracking-widest text-center">Pile Beta</span>
+                <div class="pile-slot aspect-square p-3 shadow-inner">
+                    <div id="pile-2" class="pile-tile"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- High Score List -->
+        <div class="bg-gray-900/60 rounded-xl border border-gray-800/50 overflow-hidden">
+            <div class="bg-gray-800/40 px-4 py-2 border-b border-gray-800">
+                <h3 class="text-xs font-black uppercase text-blue-400 tracking-widest flex items-center gap-2">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                    Hall of Fame
+                </h3>
+            </div>
+            <ul id="high-score-list" class="divide-y divide-gray-800/30 max-h-48 overflow-y-auto">
+                <!-- High scores rendered here -->
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Container -->
+<div id="game-over-modal" class="modal-overlay hidden">
+    <div class="modal-content text-center">
+        <h2 id="modal-title" class="text-3xl font-black mb-4 text-red-500 tracking-tighter">GAME OVER</h2>
+        <div class="bg-gray-900 rounded-xl p-4 mb-4 border border-gray-800">
+            <p class="text-sm text-gray-400 uppercase font-bold tracking-widest mb-1">Final Score</p>
+            <span id="modal-score" class="text-4xl font-black text-yellow-400">0</span>
+        </div>
+        <p id="modal-message" class="mb-6 text-gray-400 text-sm leading-relaxed"></p>
+        
+        <div id="new-high-score-form" class="hidden">
+            <input type="text" id="player-name-input" placeholder="ENTER NAME" 
+                   class="w-full p-3 mb-4 rounded-xl bg-gray-800 border-2 border-gray-700 text-white font-bold text-center focus:border-indigo-500 focus:outline-none transition-all" 
+                   maxlength="15">
+            <button id="submit-score-btn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl shadow-xl uppercase tracking-widest transition-all">
+                Submit Entry
+            </button>
+        </div>
+        <button id="close-modal-btn" class="mt-4 w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-xl shadow-lg transition-all uppercase tracking-widest text-xs">
+            Try Again
+        </button>
+    </div>
+</div>
+
+<script>
+    // --- Configuration and State ---
+    const GAME_SIZE = 5;
+    const GRID_SIZE = 5;
+    const TILE_PROPERTIES = [
+        { sides: 3, name: 'Triangle', color: '#3b82f6', score: 10, probability: 75 },
+        { sides: 4, name: 'Square', color: '#22c55e', score: 30, probability: 15 },
+        { sides: 5, name: 'Pentagon', color: '#eab308', score: 90, probability: 5 },
+        { sides: 6, name: 'Hexagon', color: '#f97316', score: 270, probability: 3 },
+        { sides: 7, name: 'Septagon', color: '#ec4899', score: 810, probability: 2 },
+    ];
+    const TOTAL_PROBABILITY = TILE_PROPERTIES.reduce((sum, p) => sum + p.probability, 0);
+
+    let canvas, ctx;
+    let canvasSize, cellSize;
+    let grid = [];
+    let score = 0;
+    let highScores = [];
+    let piles = [null, null];
+    let isDragging = false;
+    let draggedTile = null;
+    let isGameOver = false;
+    
+    let synthPlace;
+    let synthMerge;
+
+    function initializeSound() {
+        Tone.start(); 
+        synthPlace = new Tone.PluckSynth({ dampening: 4000, resonance: 0.8 }).toDestination();
+        synthMerge = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "sine" }, envelope: { release: 0.1, sustain: 0.1 } }).toDestination();
+    }
+    
+    function playSoundPlace() { if (synthPlace) synthPlace.triggerAttackRelease("G4", "16n", Tone.now(), 0.3); }
+
+    function playSoundMerge(newSideIndex) {
+        if (synthMerge) {
+            const baseNote = 200 + newSideIndex * 50; 
+            synthMerge.triggerAttackRelease([baseNote, baseNote * 1.2, baseNote * 1.5], "8n");
+        }
+    }
+
+    const scoreEl = document.getElementById('score');
+    const highScoreEl = document.getElementById('high-score');
+    const highScoreListEl = document.getElementById('high-score-list');
+    const newGameBtn = document.getElementById('new-game-btn');
+    const animationLayer = document.getElementById('animation-layer');
+    const modal = document.getElementById('game-over-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalScore = document.getElementById('modal-score');
+    const modalMessage = document.getElementById('modal-message');
+    const newHighScoreForm = document.getElementById('new-high-score-form');
+    const playerNameInput = document.getElementById('player-name-input');
+    const submitScoreBtn = document.getElementById('submit-score-btn');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+
+    function drawPolygon(ctx, x, y, sides, radius, color) {
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+            const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
+            const px = x + radius * Math.cos(angle);
+            const py = y + radius * Math.sin(angle);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = sides * 2 + 5;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#ffffff55';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${radius * 0.7}px Inter, sans-serif`; 
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(sides.toString(), x, y);
+    }
+
+    function generateNewTile() {
+        let rand = Math.random() * TOTAL_PROBABILITY;
+        let cumulative = 0;
+        for (const prop of TILE_PROPERTIES) {
+            cumulative += prop.probability;
+            if (rand <= cumulative) return TILE_PROPERTIES.findIndex(p => p.sides === prop.sides);
+        }
+        return 0;
+    }
+
+    function getTile(index) { return TILE_PROPERTIES[index]; }
+
+    function drawGrid() {
+        ctx.clearRect(0, 0, canvasSize, canvasSize);
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 1;
+        for (let i = 1; i < GRID_SIZE; i++) {
+            ctx.beginPath(); ctx.moveTo(i * cellSize, 0); ctx.lineTo(i * cellSize, canvasSize); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, i * cellSize); ctx.lineTo(canvasSize, i * cellSize); ctx.stroke();
+        }
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                if (grid[r] && grid[r][c] !== null) {
+                    const tile = getTile(grid[r][c]);
+                    drawPolygon(ctx, c * cellSize + cellSize / 2, r * cellSize + cellSize / 2, tile.sides, cellSize * 0.4, tile.color);
+                }
+            }
+        }
+        if (draggedTile) {
+            const tile = getTile(draggedTile.index);
+            drawPolygon(ctx, draggedTile.x, draggedTile.y, tile.sides, cellSize * 0.4, tile.color);
+        }
+    }
+
+    function animatePoints(x, y, points) {
+        const pointEl = document.createElement('div');
+        pointEl.textContent = `+${points}`;
+        pointEl.className = 'floating-score text-2xl';
+        const rect = canvas.getBoundingClientRect();
+        pointEl.style.left = `${rect.left + (x / canvasSize) * rect.width - rect.left}px`;
+        pointEl.style.top = `${rect.top + (y / canvasSize) * rect.height - rect.top}px`;
+        animationLayer.appendChild(pointEl);
+        setTimeout(() => pointEl.remove(), 1500);
+    }
+
+    function getAdjacents(r, c) {
+        const adjacents = [];
+        const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        for (const [dr, dc] of directions) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) adjacents.push({ r: nr, c: nc });
+        }
+        return adjacents;
+    }
+
+    function findMergeGroup(r, c, targetIndex, group = new Set()) {
+        const key = `${r},${c}`;
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE || grid[r][c] !== targetIndex || group.has(key)) return group;
+        group.add(key);
+        getAdjacents(r, c).forEach(({r: nr, c: nc}) => findMergeGroup(nr, nc, targetIndex, group));
+        return group;
+    }
+
+    async function processMerges(r, c) {
+        let totalPoints = 0;
+        const lastPlacedIndex = grid[r][c];
+        if (lastPlacedIndex === null) return { totalPoints: 0, merged: false };
+        const mergeGroup = findMergeGroup(r, c, lastPlacedIndex);
+        if (mergeGroup.size >= 3) {
+            const newTileIndex = lastPlacedIndex + 1;
+            const pointsEarned = getTile(lastPlacedIndex).score * mergeGroup.size;
+            totalPoints += pointsEarned; score += pointsEarned; updateScoreDisplay();
+            animatePoints(c * cellSize + cellSize / 2, r * cellSize + cellSize / 2, pointsEarned);
+            playSoundMerge(newTileIndex);
+            mergeGroup.forEach(key => { const [mr, mc] = key.split(',').map(Number); grid[mr][mc] = null; });
+            if (newTileIndex < TILE_PROPERTIES.length) {
+                grid[r][c] = newTileIndex;
+                const nextMerge = await processMerges(r, c);
+                totalPoints += nextMerge.totalPoints;
+            }
+            return { totalPoints, merged: true };
+        }
+        return { totalPoints, merged: false };
+    }
+
+    function checkGameOver() {
+        if (grid.some(row => row.includes(null))) return false;
+        isGameOver = true; showGameOverModal(); return true;
+    }
+
+    function updateScoreDisplay() { scoreEl.textContent = score; }
+
+    function loadHighScores() {
+        try {
+            const data = localStorage.getItem('polygonMergeHighScores');
+            highScores = data ? JSON.parse(data) : [];
+            highScores.sort((a, b) => b.score - a.score);
+            highScores = highScores.slice(0, 10);
+        } catch (e) { highScores = []; }
+        updateHighScoresDisplay();
+    }
+
+    function saveHighScores() { try { localStorage.setItem('polygonMergeHighScores', JSON.stringify(highScores)); } catch (e) {} }
+
+    function updateHighScoresDisplay() {
+        highScoreEl.textContent = highScores.length > 0 ? highScores[0].score : 0;
+        highScoreListEl.innerHTML = '';
+        if (highScores.length === 0) {
+            highScoreListEl.innerHTML = '<li class="text-center p-6 text-gray-500 text-xs italic">Awaiting legends...</li>';
+            return;
+        }
+        highScores.forEach((entry, index) => {
+            const li = document.createElement('li');
+            li.className = 'leaderboard-row flex justify-between items-center px-4 py-2 text-sm';
+            let rankStyle = 'text-gray-500';
+            if (index === 0) rankStyle = 'text-yellow-400 font-black';
+            else if (index === 1) rankStyle = 'text-gray-300 font-black';
+            else if (index === 2) rankStyle = 'text-amber-600 font-black';
+
+            li.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <span class="w-4 text-center ${rankStyle}">${index + 1}</span>
+                    <span class="font-bold text-gray-200 truncate max-w-[120px]">${entry.name}</span>
+                </div>
+                <span class="font-black text-white">${entry.score.toLocaleString()}</span>
+            `;
+            highScoreListEl.appendChild(li);
+        });
+    }
+    
+    function showGameOverModal() {
+        modalTitle.textContent = 'GAME OVER';
+        modalScore.textContent = score;
+        newHighScoreForm.classList.add('hidden');
+        const lowestHighScore = highScores.length > 0 ? highScores[highScores.length - 1].score : -1;
+        const isNewHighScore = score > 0 && (score > lowestHighScore || highScores.length < 10);
+        if (isNewHighScore) {
+            modalMessage.textContent = "Your polygons reached a new zenith. Enter your name for the Hall of Fame.";
+            newHighScoreForm.classList.remove('hidden');
+            playerNameInput.focus();
+            closeModalBtn.classList.add('hidden');
+        } else {
+            modalMessage.textContent = "The grid is locked. Your shapes have found their final rest.";
+            closeModalBtn.classList.remove('hidden');
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function drawPileTile(pileId, tileIndex) {
+        const pileEl = document.getElementById(pileId);
+        if (!pileEl || tileIndex === null) return;
+        let pc = pileEl.querySelector('canvas') || document.createElement('canvas');
+        if (!pileEl.contains(pc)) { pileEl.innerHTML = ''; pileEl.appendChild(pc); }
+        const size = pileEl.clientWidth;
+        pc.width = pc.height = size;
+        const pctx = pc.getContext('2d');
+        pctx.clearRect(0, 0, size, size);
+        drawPolygon(pctx, size/2, size/2, getTile(tileIndex).sides, size*0.35, getTile(tileIndex).color);
+    }
+    
+    function initGame() {
+        canvas = document.getElementById('game-canvas');
+        ctx = canvas.getContext('2d');
+        window.addEventListener('resize', resizeCanvas);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('touchmove', handleTouchMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('touchend', handleMouseUp);
+        document.getElementById('pile-1').addEventListener('mousedown', (e) => startDrag(e, 0));
+        document.getElementById('pile-2').addEventListener('mousedown', (e) => startDrag(e, 1));
+        document.getElementById('pile-1').addEventListener('touchstart', (e) => startDrag(e, 0));
+        document.getElementById('pile-2').addEventListener('touchstart', (e) => startDrag(e, 1));
+        newGameBtn.addEventListener('click', newGame);
+        closeModalBtn.addEventListener('click', newGame);
+        submitScoreBtn.addEventListener('click', submitScore);
+        initializeSound(); loadHighScores(); newGame(); resizeCanvas();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function newGame() {
+        modal.classList.add('hidden'); score = 0; isGameOver = false; updateScoreDisplay();
+        grid = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(null));
+        piles[0] = generateNewTile(); piles[1] = generateNewTile();
+        drawPiles();
+    }
+
+    function submitScore() {
+        const name = playerNameInput.value.trim() || 'Anonymous';
+        highScores.push({ name: name.substring(0, 15), score: score, date: new Date().toISOString() });
+        highScores.sort((a, b) => b.score - a.score);
+        highScores = highScores.slice(0, 10);
+        saveHighScores(); updateHighScoresDisplay(); newGame();
+    }
+
+    function resizeCanvas() {
+        const container = document.getElementById('game-board-area');
+        if (!container) return;
+        canvasSize = container.clientWidth;
+        canvas.width = canvas.height = canvasSize;
+        cellSize = canvasSize / GRID_SIZE;
+        drawGrid(); drawPiles();
+    }
+    
+    function drawPiles() { drawPileTile('pile-1', piles[0]); drawPileTile('pile-2', piles[1]); }
+
+    function getCanvasCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+        const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+        return { x: (clientX - rect.left) / rect.width * canvasSize, y: (clientY - rect.top) / rect.height * canvasSize };
+    }
+
+    function startDrag(e, pileIndex) {
+        e.preventDefault(); if (isGameOver) return;
+        const pileEl = document.getElementById(`pile-${pileIndex + 1}`);
+        const rect = pileEl.getBoundingClientRect();
+        draggedTile = { index: piles[pileIndex], pile: pileIndex, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        isDragging = true;
+        pileEl.style.opacity = '0';
+    }
+
+    function handleMouseMove(e) { if (!isDragging || isGameOver) return; const coords = getCanvasCoords(e); draggedTile.x = coords.x; draggedTile.y = coords.y; }
+    function handleTouchMove(e) { e.preventDefault(); handleMouseMove(e); }
+
+    async function handleMouseUp(e) {
+        if (!isDragging || isGameOver) return;
+        isDragging = false; const coords = getCanvasCoords(e);
+        const col = Math.floor(coords.x / cellSize), row = Math.floor(coords.y / cellSize);
+        if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE && grid[row][col] === null) {
+            grid[row][col] = draggedTile.index;
+            playSoundPlace();
+            piles[draggedTile.pile] = generateNewTile();
+            await processMerges(row, col);
+            checkGameOver();
+        }
+        draggedTile = null;
+        document.getElementById('pile-1').style.opacity = '1';
+        document.getElementById('pile-2').style.opacity = '1';
+        drawGrid(); drawPiles();
+    }
+    
+    function gameLoop() { drawGrid(); if (!isGameOver) requestAnimationFrame(gameLoop); }
+
+    window.onload = initGame;
+</script>
+</body>
+</html>

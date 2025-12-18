@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Neighborhood Shooter: Final Version</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        /* Blocker/Instructions Styles */
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 10;
+        }
+        #instructions {
+            padding: 20px;
+            border: 1px solid white;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        /* HUD Styles */
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 5;
+            min-width: 300px;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 2px;
+            background-color: white;
+            margin-top: -1px;
+            margin-left: -1px;
+            border-radius: 50%;
+            z-index: 5;
+        }
+        /* Game Over Styles */
+        #gameOver {
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            background-color: rgba(150, 0, 0, 0.8); 
+            display: none; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            color: white; 
+            font-size: 40px; 
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <div id="blocker">
+        <div id="instructions">
+            <p>Click **OR Press Enter** to Start</p>
+            <p>
+                **Move:** WASD | **Look:** Mouse<br>
+                **Jump/Sprint:** SPACEBAR | **Sprint:** SHIFT<br>
+                **Fire:** LEFT CLICK | **BULLET TIME:** RIGHT CLICK | **Pause:** P
+            </p>
+        </div>
+    </div>
+    
+    <div id="hud">
+        Round: <span id="roundValue">0</span> | Time: <span id="timeValue">2:30</span><br>
+        Health: <span id="healthValue">100</span> | Score: <span id="scoreValue">0</span>
+    </div>
+    
+    <div id="crosshair"></div>
+
+    <div id="gameOver">
+        <p>GAME OVER</p>
+        <p style="font-size: 24px;">Final Score: <span id="finalScoreValue">0</span></p>
+        <p style="font-size: 20px;">Press R to Restart</p>
+    </div>
+
+    <audio id="gunFireSound" src="gun_fire.wav" preload="auto"></audio>
+    <audio id="playerHitSound" src="player_hit.wav" preload="auto"></audio>
+    <audio id="enemyExplodeSound" src="enemy_hit.wav" preload="auto"></audio>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // === START OF EMBEDDED POINTER LOCK CONTROLS ===
+        THREE.PointerLockControls = function (camera, domElement) {
+            if (domElement === undefined) {
+                console.warn('THREE.PointerLockControls: The second parameter "domElement" is now mandatory.');
+                domElement = document.body;
+            }
+
+            const scope = this;
+            scope.domElement = domElement;
+
+            this.enabled = true;
+            this.isLocked = false;
+            this.minPolarAngle = 0; 
+            this.maxPolarAngle = Math.PI;
+
+            const changeEvent = { type: 'change' };
+            const lockEvent = { type: 'lock' };
+            const unlockEvent = { type: 'unlock' };
+
+            const PI_2 = Math.PI / 2;
+            const vector = new THREE.Vector3();
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            camera.rotation.set(0, 0, 0);
+
+            function onMouseMove(event) {
+                if (scope.isLocked === false) return;
+
+                const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+                const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+
+                euler.setFromQuaternion(camera.quaternion);
+
+                euler.y -= movementX * 0.002; 
+                euler.x -= movementY * 0.002; 
+
+                euler.x = Math.max(PI_2 - scope.maxPolarAngle, Math.min(PI_2 - scope.minPolarAngle, euler.x));
+
+                camera.quaternion.setFromEuler(euler);
+                scope.dispatchEvent(changeEvent);
+            }
+
+            function onPointerlockChange() {
+                if (scope.domElement.ownerDocument.pointerLockElement === scope.domElement) {
+                    scope.isLocked = true;
+                    scope.dispatchEvent(lockEvent);
+                } else {
+                    scope.isLocked = false;
+                    scope.dispatchEvent(unlockEvent);
+                }
+            }
+
+            function onPointerlockError() {
+                console.error('THREE.PointerLockControls: Unable to use Pointer Lock API');
+            }
+
+            this.connect = function () {
+                scope.domElement.ownerDocument.addEventListener('mousemove', onMouseMove, false);
+                scope.domElement.ownerDocument.addEventListener('pointerlockchange', onPointerlockChange, false);
+                scope.domElement.ownerDocument.addEventListener('pointerlockerror', onPointerlockError, false);
+            };
+
+            this.disconnect = function () {
+                scope.domElement.ownerDocument.removeEventListener('mousemove', onMouseMove, false);
+                scope.domElement.ownerDocument.removeEventListener('pointerlockchange', onPointerlockChange, false);
+                scope.domElement.ownerDocument.removeEventListener('pointerlockerror', onPointerlockError, false);
+            };
+
+            this.dispose = function () {
+                this.disconnect();
+            };
+
+            this.getObject = function () {
+                return camera;
+            };
+
+            this.getDirection = function (v) {
+                return v.set(0, 0, -1).applyQuaternion(camera.quaternion);
+            };
+
+            this.moveForward = function (distance) {
+                vector.setFromMatrixColumn(camera.matrix, 0);
+                vector.crossVectors(camera.up, vector);
+                camera.position.addScaledVector(vector, distance);
+            };
+
+            this.moveRight = function (distance) {
+                vector.setFromMatrixColumn(camera.matrix, 0);
+                camera.position.addScaledVector(vector, distance);
+            };
+
+            this.lock = function () {
+                this.domElement.requestPointerLock();
+            };
+
+            this.unlock = function () {
+                this.domElement.ownerDocument.exitPointerLock();
+            };
+
+            this.connect();
+        };
+
+        THREE.PointerLockControls.prototype = Object.create(THREE.EventDispatcher.prototype);
+        THREE.PointerLockControls.prototype.constructor = THREE.PointerLockControls;
+        
+        // === END OF EMBEDDED POINTER LOCK CONTROLS ===
+        
+
+        // --- 1. Core Setup & Game State ---
+        let camera, scene, renderer, controls;
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let canJump = false; 
+        let isSprinting = false; 
+        let isPaused = false; 
+        let isDead = false; 
+        let isSlowed = false; 
+        
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        
+        // Physics Constants
+        const GRAVITY = -9.8 * 100;
+        const JUMP_VELOCITY = 150;
+        const PLAYER_HEIGHT = 10;
+        const PLAYER_HALF_WIDTH = 5;
+        const ENEMY_HALF_WIDTH = 5; 
+
+        // Game State & Round Variables
+        let playerHealth = 100;
+        let score = 0;
+        let roundNumber = 0; 
+        let roundTimer = 0; 
+        const ROUND_DURATION = 150;
+
+        const enemies = [];
+        const enemyProjectiles = [];
+        const playerProjectiles = []; 
+        const solidObjects = [];
+        let viewModelMesh;
+        
+        // Base Speeds
+        const BASE_ENEMY_BULLET_SPEED = 60;
+        const BASE_PLAYER_BULLET_SPEED = 200;
+        const BASE_PLAYER_MOVEMENT_SPEED = 400.0;
+        const BASE_ENEMY_MOVEMENT_SPEED = 10;
+
+        // Slowdown Factor
+        const SLOW_FACTOR = 0.2; 
+
+        // Damage Constants (Consistent damage for player hit and humanoid body shots)
+        const PLAYER_HIT_DAMAGE = 20;
+
+        // --- 2. Initialise the Scene and Controls ---
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            const skyColor = 0x87CEEB;
+            scene.background = new THREE.Color(skyColor);
+            scene.fog = new THREE.Fog(skyColor, 0, 750);
+
+            // Camera (Player's POV)
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.y = PLAYER_HEIGHT; 
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // --- 3. Controls Setup ---
+            controls = new THREE.PointerLockControls(camera, document.body);
+
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+            
+            instructions.addEventListener('click', function() { controls.lock(); });
+            
+            controls.addEventListener('lock', function() {
+                if (isDead) return;
+                blocker.style.display = 'none';
+                isPaused = false;
+                if(viewModelMesh) camera.add(viewModelMesh);
+                if (roundNumber === 0) startRound(); 
+            });
+
+            controls.addEventListener('unlock', function() {
+                if (isDead) return;
+                blocker.style.display = 'flex';
+                isPaused = true;
+                if(viewModelMesh) camera.remove(viewModelMesh);
+                isSlowed = false;
+            });
+            
+            // --- 4. Game Environment ---
+            const planeGeometry = new THREE.PlaneGeometry(2000, 2000, 100, 100);
+            const planeMaterial = new THREE.MeshLambertMaterial({ color: 0x555555, side: THREE.DoubleSide });
+            const ground = new THREE.Mesh(planeGeometry, planeMaterial);
+            ground.rotation.x = Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xFFFFFF, 0.4));
+            const light = new THREE.DirectionalLight(0xffffff, 0.8);
+            light.position.set(100, 100, 50);
+            light.castShadow = true;
+            scene.add(light);
+            
+            setupViewModel();
+            createNeighborhood();
+            updateHUD();
+
+            // --- 5. Event Listeners ---
+            document.addEventListener('keydown', onKeyDown, false);
+            document.addEventListener('keyup', onKeyUp, false);
+            document.addEventListener('mousedown', onMouseDown, false);
+            document.addEventListener('mouseup', onMouseUp, false);
+            document.addEventListener('contextmenu', (e) => e.preventDefault(), false);
+            document.addEventListener('resize', onWindowResize, false);
+        }
+        
+        // --- 6. Helper Functions ---
+        function playSound(id) {
+            const sound = document.getElementById(id);
+            if (sound) {
+                sound.currentTime = 0;
+                sound.play();
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('scoreValue').textContent = score;
+            document.getElementById('healthValue').textContent = playerHealth; 
+            document.getElementById('roundValue').textContent = roundNumber;
+            
+            const minutes = Math.floor(roundTimer / 60);
+            const seconds = Math.floor(roundTimer % 60).toString().padStart(2, '0');
+            document.getElementById('timeValue').textContent = `${minutes}:${seconds}`;
+        }
+
+        function calculateEnemies(round) {
+            return 1 + round; 
+        }
+
+        function clearEnemies() {
+            enemies.forEach(enemy => scene.remove(enemy));
+            enemies.length = 0;
+            
+            enemyProjectiles.forEach(p => scene.remove(p));
+            enemyProjectiles.length = 0;
+        }
+
+        function startRound() {
+            roundNumber++;
+            playerHealth = 100;
+            roundTimer = ROUND_DURATION;
+            clearEnemies();
+
+            const enemiesToSpawn = calculateEnemies(roundNumber);
+
+            for (let i = 0; i < enemiesToSpawn; i++) {
+                spawnEnemy();
+            }
+            
+            camera.position.set(0, PLAYER_HEIGHT, 0); 
+
+            updateHUD();
+        }
+        
+        function endRound(reason) {
+            isPaused = true;
+            controls.unlock();
+            
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+            
+            if (reason === 'DEFEATED') {
+                instructions.innerHTML = `
+                    <p>ROUND ${roundNumber} COMPLETE!</p>
+                    <p style="font-size:18px;">Enemies Defeated! You earned ${roundNumber * 100} bonus points.</p>
+                    <p style="font-size:20px;">Click or Press Enter for Round ${roundNumber + 1}</p>
+                `;
+                score += roundNumber * 100;
+            } else if (reason === 'TIMEOUT') {
+                instructions.innerHTML = `
+                    <p>ROUND ${roundNumber} ENDED!</p>
+                    <p style="font-size:18px;">Time ran out! Prepare for the next wave.</p>
+                    <p style="font-size:20px;">Click or Press Enter for Round ${roundNumber + 1}</p>
+                `;
+            }
+
+            blocker.style.display = 'flex';
+        }
+
+        function createNeighborhood() {
+            const houseCount = 15;
+            const sizeLimit = 500;
+            const minHouseDistance = 100; 
+            const maxAttempts = 50;
+
+            for (let i = 0; i < houseCount; i++) {
+                const width = THREE.MathUtils.randFloat(20, 50);
+                const depth = THREE.MathUtils.randFloat(20, 50);
+                const height = THREE.MathUtils.randFloat(30, 80);
+                
+                let x, z;
+                let collided = true;
+                let attempts = 0;
+
+                while (collided && attempts < maxAttempts) {
+                    x = THREE.MathUtils.randFloat(-sizeLimit, sizeLimit);
+                    z = THREE.MathUtils.randFloat(-sizeLimit, sizeLimit);
+                    collided = false;
+
+                    if (Math.sqrt(x*x + z*z) < minHouseDistance) {
+                        collided = true;
+                        attempts++;
+                        continue;
+                    }
+
+                    for (const existingHouse of solidObjects) {
+                        const dist = existingHouse.position.distanceTo(new THREE.Vector3(x, height/2, z));
+                        if (dist < minHouseDistance) {
+                            collided = true;
+                            break;
+                        }
+                    }
+                    attempts++;
+                }
+
+                if (attempts === maxAttempts) continue;
+
+                const color = Math.random() * 0x808080 + 0x808080;
+                
+                const geometry = new THREE.BoxGeometry(width, height, depth);
+                const material = new THREE.MeshPhongMaterial({ color: color, opacity: 1.0, transparent: false }); 
+                const house = new THREE.Mesh(geometry, material);
+                
+                house.position.set(x, height / 2, z);
+                house.receiveShadow = true;
+                house.castShadow = true;
+
+                scene.add(house);
+                house.userData.isSolid = true;
+                solidObjects.push(house);
+            }
+        }
+        
+        function handleGameOver() {
+            isDead = true;
+            isPaused = true;
+            controls.unlock();
+            document.getElementById('gameOver').style.display = 'flex';
+            document.getElementById('finalScoreValue').textContent = score;
+            if(viewModelMesh) camera.remove(viewModelMesh);
+        }
+        
+        function resetGame() {
+            window.location.reload(); 
+        }
+
+
+        // --- 7. Collision Detection (AABB) ---
+        function checkPlayerCollision(newPosition) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                newPosition, 
+                new THREE.Vector3(PLAYER_HALF_WIDTH * 2, PLAYER_HEIGHT, PLAYER_HALF_WIDTH * 2)
+            );
+
+            let collisionResult = { x: false, z: false };
+
+            for (let i = 0; i < solidObjects.length; i++) {
+                const object = solidObjects[i];
+                if (!object.userData.isSolid) continue;
+
+                const objectBox = new THREE.Box3().setFromObject(object);
+
+                if (playerBox.min.y > objectBox.max.y) continue;
+
+                // Check for collision on X axis only
+                const testX = new THREE.Box3(
+                    new THREE.Vector3(playerBox.min.x, playerBox.min.y, objectBox.min.z),
+                    new THREE.Vector3(playerBox.max.x, playerBox.max.y, objectBox.max.z)
+                );
+                if (testX.intersectsBox(objectBox)) {
+                    collisionResult.x = true;
+                }
+
+                // Check for collision on Z axis only
+                const testZ = new THREE.Box3(
+                    new THREE.Vector3(objectBox.min.x, playerBox.min.y, playerBox.min.z),
+                    new THREE.Vector3(objectBox.max.x, playerBox.max.y, playerBox.max.z)
+                );
+                 if (testZ.intersectsBox(objectBox)) {
+                    collisionResult.z = true;
+                }
+                
+                if (collisionResult.x && collisionResult.z) return collisionResult;
+            }
+            return collisionResult;
+        }
+
+
+        // --- 8. Model/Enemy/Projectile Functions ---
+        
+        function setupViewModel() {
+            const skinMaterial = new THREE.MeshPhongMaterial({ color: 0x8D5524 });
+            const gunMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+
+            const armGroup = new THREE.Group();
+            
+            const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.5), skinMaterial);
+            upperArm.position.set(0, 0.5, 0); 
+            
+            const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.4), skinMaterial);
+            forearm.position.set(0, 1.5, -0.2); 
+            forearm.rotation.x = Math.PI * 0.1; 
+
+            const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.2, 10), gunMaterial);
+            gunBarrel.rotation.z = Math.PI / 2; 
+            gunBarrel.position.set(0.6, 2.0, -0.5); 
+            
+            const gunHandle = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.5), gunMaterial);
+            gunHandle.position.set(0.0, 1.7, -0.5);
+
+            armGroup.add(upperArm, forearm, gunBarrel, gunHandle);
+            armGroup.rotation.y = -Math.PI * 0.1; 
+
+            viewModelMesh = armGroup;
+            
+            viewModelMesh.position.set(1.5, -1.5, -1.0);
+            
+            camera.add(viewModelMesh);
+            camera.remove(viewModelMesh);
+        }
+
+        function createHealthBar(maxHealth) {
+            const barWidth = 15;
+            const barHeight = 2;
+            const barDepth = 0.5;
+
+            const healthBar = new THREE.Group();
+            healthBar.position.y = 35; 
+
+            // Background (Red/Black)
+            const backgroundGeo = new THREE.BoxGeometry(barWidth, barHeight, barDepth);
+            const backgroundMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const background = new THREE.Mesh(backgroundGeo, backgroundMat);
+            healthBar.add(background);
+
+            // Foreground (Green)
+            const foregroundGeo = new THREE.BoxGeometry(barWidth * 0.95, barHeight * 0.8, barDepth * 2);
+            const foregroundMat = new THREE.MeshBasicMaterial({ color: 0x00FF00 });
+            const foreground = new THREE.Mesh(foregroundGeo, foregroundMat);
+            foreground.position.z = barDepth / 2;
+            foreground.userData.isHealthBar = true; 
+            foreground.userData.maxWidth = barWidth * 0.95;
+            healthBar.add(foreground);
+            
+            healthBar.userData.health = maxHealth;
+            healthBar.userData.maxHealth = maxHealth;
+
+            return healthBar;
+        }
+
+        function updateHealthBar(healthBar) {
+            const currentHealth = healthBar.userData.health;
+            const maxHealth = healthBar.userData.maxHealth;
+            const foreground = healthBar.children.find(c => c.userData.isHealthBar);
+            
+            if (foreground) {
+                const scaleX = currentHealth / maxHealth;
+                
+                // Scale the visual width and adjust position for left-pivot effect
+                foreground.scale.x = scaleX;
+                // Use the original max width to calculate the offset to keep the bar filling from the left
+                foreground.position.x = (foreground.userData.maxWidth * (scaleX - 1)) / 2;
+            }
+        }
+        
+        function createEnemyGun() {
+             const gunGeometry = new THREE.CylinderGeometry(0.5, 0.5, 5, 8);
+             const gunMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+             const gun = new THREE.Mesh(gunGeometry, gunMaterial);
+             gun.rotation.z = Math.PI / 2;
+             gun.position.set(3, 0, 0); 
+             return gun;
+        }
+        
+        function checkEnemyCollision(enemyPosition) {
+            const enemyBox = new THREE.Box3().setFromCenterAndSize(
+                enemyPosition,
+                new THREE.Vector3(ENEMY_HALF_WIDTH * 2, 30, ENEMY_HALF_WIDTH * 2)
+            );
+            
+            for (const object of solidObjects) {
+                const objectBox = new THREE.Box3().setFromObject(object);
+                if (enemyBox.intersectsBox(objectBox)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function spawnEnemy() {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = THREE.MathUtils.randFloat(80, 180);
+            const x = Math.cos(angle) * distance;
+            const z = Math.sin(angle) * distance;
+            const initialHealth = 100;
+
+            const skinMaterial = new THREE.MeshPhongMaterial({ color: 0x8D5524 });
+            const suitMaterial = new THREE.MeshPhongMaterial({ color: 0x444466 });
+            
+            const body = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 5), suitMaterial);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 16), skinMaterial);
+            head.userData.isHead = true; 
+
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(4, 15, 4), suitMaterial);
+            
+            body.position.y = 10;
+            head.position.y = 25;
+            arm.position.set(7, 10, 0);
+            
+            const enemyGun = createEnemyGun();
+            arm.add(enemyGun);
+
+            const enemyGroup = new THREE.Group();
+            enemyGroup.add(body);
+            enemyGroup.add(head); 
+            enemyGroup.add(arm);
+
+            const healthBar = createHealthBar(initialHealth);
+            enemyGroup.add(healthBar);
+            
+            enemyGroup.position.set(x, 0, z);
+            enemyGroup.castShadow = true;
+            
+            enemyGroup.userData.isEnemy = true;
+            enemyGroup.userData.health = initialHealth; 
+            enemyGroup.userData.healthBar = healthBar; 
+            enemyGroup.userData.lastShot = performance.now();
+            enemyGroup.userData.targetPosition = new THREE.Vector3(x, 0, z);
+            enemyGroup.userData.gunTip = enemyGun;
+            
+            scene.add(enemyGroup);
+            enemies.push(enemyGroup);
+        }
+        
+        function createPlayerBullet() {
+            const bulletGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+            const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+            const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+            
+            bullet.position.copy(camera.position);
+            
+            const gunTipPosition = new THREE.Vector3(1.6, -0.75, -2.4);
+            gunTipPosition.applyQuaternion(camera.quaternion);
+            bullet.position.add(gunTipPosition);
+            
+            const directionVector = new THREE.Vector3(0, 0, -1); 
+            directionVector.applyQuaternion(camera.quaternion);
+            
+            const currentBulletSpeed = BASE_PLAYER_BULLET_SPEED * (isSlowed ? SLOW_FACTOR : 1.0);
+            bullet.userData.velocity = directionVector.multiplyScalar(currentBulletSpeed);
+            bullet.userData.isPlayerBullet = true;
+            
+            bullet.quaternion.copy(camera.quaternion);
+            bullet.rotateX(Math.PI / 2); 
+            
+            scene.add(bullet);
+            playerProjectiles.push(bullet);
+            
+            playSound('gunFireSound');
+        }
+
+        function shootProjectile(enemy) {
+            const projectileGeometry = new THREE.CylinderGeometry(0.5, 0.5, 5, 8);
+            const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xFFA500 });
+            const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+            
+            const gunTipWorldPos = new THREE.Vector3();
+            enemy.userData.gunTip.getWorldPosition(gunTipWorldPos);
+            
+            projectile.position.copy(gunTipWorldPos);
+            
+            const directionVector = camera.position.clone().sub(projectile.position).normalize();
+            
+            const currentBulletSpeed = BASE_ENEMY_BULLET_SPEED * (isSlowed ? SLOW_FACTOR : 1.0);
+            projectile.userData.velocity = directionVector.multiplyScalar(currentBulletSpeed);
+            projectile.userData.isEnemyProjectile = true;
+            
+            const tempUp = new THREE.Vector3(0, 1, 0);
+            const rotationMatrix = new THREE.Matrix4();
+            rotationMatrix.lookAt(new THREE.Vector3(), directionVector, tempUp);
+            projectile.setRotationFromMatrix(rotationMatrix);
+            projectile.rotateX(Math.PI / 2); 
+            
+            scene.add(projectile);
+            enemyProjectiles.push(projectile);
+        }
+
+
+        // --- 9. Input Handling Functions ---
+
+        const onKeyDown = function (event) {
+            if (isDead) {
+                if (event.code === 'KeyR') resetGame();
+                return;
+            }
+            switch (event.code) {
+                case 'Enter':
+                    if (controls.isLocked === false) controls.lock();
+                    break;
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
+                
+                case 'Space': 
+                    if (canJump === true) {
+                        velocity.y = JUMP_VELOCITY;
+                        canJump = false;
+                    } 
+                case 'ShiftLeft':
+                    if (controls.isLocked) isSprinting = true;
+                    break;
+                
+                case 'KeyP':
+                    if (controls.isLocked) controls.unlock();
+                    break;
+            }
+        };
+
+        const onKeyUp = function (event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+                
+                case 'ShiftLeft':
+                case 'Space': 
+                    isSprinting = false;
+                    break;
+            }
+        };
+        
+        const onMouseDown = function(event) {
+            if (controls.isLocked === false || isDead) return;
+            if (event.button === 0) { // Left Click (Fire)
+                createPlayerBullet(); 
+            } else if (event.button === 2) { // Right Click (Slow Down)
+                isSlowed = true;
+            }
+        };
+
+        const onMouseUp = function(event) {
+            if (event.button === 2) { // Right Click (Stop Slow Down)
+                isSlowed = false;
+            }
+        };
+
+
+        // --- 10. Animation Loop ---
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls.isLocked === true && !isPaused && !isDead) {
+                const time = performance.now();
+                const delta = (time - prevTime) / 1000; 
+                
+                const effectiveDelta = isSlowed ? delta * SLOW_FACTOR : delta;
+                
+                // --- Round Timer Update ---
+                roundTimer -= effectiveDelta;
+                if (roundTimer <= 0) {
+                    roundTimer = 0;
+                    endRound('TIMEOUT');
+                }
+                
+                // --- Win Condition Check ---
+                if (enemies.length === 0 && roundTimer > 0 && roundNumber > 0) {
+                    endRound('DEFEATED');
+                }
+                
+                // --- 1. Apply Gravity ---
+                velocity.y += GRAVITY * effectiveDelta; 
+
+                // --- 2. Horizontal Movement (Friction & Input) ---
+                velocity.x -= velocity.x * 10.0 * effectiveDelta;
+                velocity.z -= velocity.z * 10.0 * effectiveDelta;
+                
+                const currentMovementSpeed = BASE_PLAYER_MOVEMENT_SPEED * (isSlowed ? SLOW_FACTOR : 1.0);
+                const sprintMultiplier = isSprinting ? 2.5 : 1.0; 
+                const currentSpeed = currentMovementSpeed * sprintMultiplier;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize(); 
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * effectiveDelta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * effectiveDelta;
+                
+                // --- 3. Calculate Proposed Position ---
+                const moveX = -velocity.x * effectiveDelta;
+                const moveZ = -velocity.z * effectiveDelta;
+
+                const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+
+                // --- 4. Collision Check (Sliding Fix) ---
+                
+                const newPosX = camera.position.clone().add(rightVector.clone().multiplyScalar(moveX));
+                let collisionX = checkPlayerCollision(newPosX).x;
+
+                const newPosZ = camera.position.clone().add(forwardVector.clone().multiplyScalar(moveZ));
+                let collisionZ = checkPlayerCollision(newPosZ).z;
+
+                
+                // Apply Movement Manually (Allowing Sliding)
+                if (!collisionX) {
+                    camera.position.x += rightVector.x * moveX;
+                    camera.position.z += rightVector.z * moveX;
+                } else {
+                    velocity.x = 0;
+                }
+
+                if (!collisionZ) {
+                    camera.position.x += forwardVector.x * moveZ;
+                    camera.position.z += forwardVector.z * moveZ;
+                } else {
+                    velocity.z = 0;
+                }
+                
+                
+                // --- 5. Vertical Movement & Floor Collision ---
+                camera.position.y += velocity.y * effectiveDelta;
+                
+                if (camera.position.y < PLAYER_HEIGHT) {
+                    velocity.y = 0;
+                    camera.position.y = PLAYER_HEIGHT;
+                    canJump = true;
+                }
+                
+                // --- 6. Game Object Update ---
+                updatePlayerBullets(effectiveDelta);
+                updateEnemyProjectiles(effectiveDelta);
+                updateEnemies(effectiveDelta);
+                
+                // Health Bar Billboarding 
+                enemies.forEach(enemy => {
+                    if (enemy.userData.healthBar) {
+                        enemy.userData.healthBar.quaternion.copy(camera.quaternion);
+                    }
+                });
+                
+                updateHUD();
+
+                prevTime = time;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 11. Projectile Update Logic ---
+        
+        function updatePlayerBullets(delta) {
+            const bulletsToRemove = [];
+            const targets = [...enemies, ...enemyProjectiles, ...solidObjects];
+            
+            playerProjectiles.forEach(bullet => {
+                bullet.position.addScaledVector(bullet.userData.velocity, delta);
+                
+                if (bullet.position.distanceTo(camera.position) > 500) {
+                    bulletsToRemove.push(bullet);
+                    return;
+                }
+                
+                for (let i = 0; i < targets.length; i++) {
+                    const target = targets[i];
+                    
+                    if (bullet.position.distanceTo(target.position) < 5) { 
+                        
+                        if (target.userData.isSolid) {
+                            bulletsToRemove.push(bullet); 
+                            return; 
+
+                        } else if (target.userData.isEnemy) {
+                            
+                            // Check if bullet hit the head mesh 
+                            let isHeadshot = false;
+                            for (const child of target.children) {
+                                if (child.userData.isHead) {
+                                    // 4 units is the head radius check distance
+                                    if (bullet.position.distanceTo(child.getWorldPosition(new THREE.Vector3())) < 4) {
+                                        isHeadshot = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // Apply instant kill for headshot, or standard damage otherwise (20)
+                            const damageDealt = isHeadshot ? target.userData.health : PLAYER_HIT_DAMAGE;
+                            
+                            target.userData.health -= damageDealt;
+                            updateHealthBar(target.userData.healthBar); // VISUAL UPDATE
+                            bulletsToRemove.push(bullet); 
+                            score += 10; 
+
+                            if (target.userData.health <= 0) {
+                                playSound('enemyExplodeSound');
+                                score += 90; 
+                                scene.remove(target);
+                                enemies.splice(enemies.indexOf(target), 1);
+                                if (enemies.length === 0) endRound('DEFEATED');
+                            } else {
+                                playSound('enemyExplodeSound');
+                            }
+                            
+                            updateHUD();
+                            return; 
+
+                        } else if (target.userData.isEnemyProjectile) {
+                            score += 10;
+                            scene.remove(target);
+                            enemyProjectiles.splice(enemyProjectiles.indexOf(target), 1);
+                            bulletsToRemove.push(bullet); 
+                            updateHUD();
+                            return; 
+                        }
+                    }
+                }
+            });
+            
+            bulletsToRemove.forEach(bullet => {
+                scene.remove(bullet);
+                playerProjectiles.splice(playerProjectiles.indexOf(bullet), 1);
+            });
+        }
+
+        function updateEnemyProjectiles(delta) {
+            const projectilesToRemove = [];
+            
+            for (let i = 0; i < enemyProjectiles.length; i++) {
+                const p = enemyProjectiles[i];
+                
+                p.position.addScaledVector(p.userData.velocity, delta);
+
+                // Check collision against solid objects (walls)
+                for (let j = 0; j < solidObjects.length; j++) {
+                    const wall = solidObjects[j];
+                    if (p.position.distanceTo(wall.position) < 10) { 
+                        projectilesToRemove.push(p);
+                        break;
+                    }
+                }
+                
+                // Player Hit Check (Collision with Camera)
+                if (p.position.distanceTo(camera.position) < 5) { 
+                    playerHealth -= PLAYER_HIT_DAMAGE;
+                    
+                    playSound('playerHitSound');
+
+                    if (playerHealth <= 0) {
+                        handleGameOver();
+                    }
+                    projectilesToRemove.push(p);
+                    updateHUD();
+                    continue;
+                }
+                
+                if (p.position.distanceTo(new THREE.Vector3(0, 0, 0)) > 500) {
+                    projectilesToRemove.push(p);
+                    continue;
+                }
+            }
+            
+            projectilesToRemove.forEach(p => {
+                scene.remove(p);
+                enemyProjectiles.splice(enemyProjectiles.indexOf(p), 1);
+            });
+        }
+        
+        function updateEnemies(delta) {
+            const time = performance.now();
+            const fireRate = 1.5; 
+            const movementSpeed = BASE_ENEMY_MOVEMENT_SPEED * (isSlowed ? SLOW_FACTOR : 1.0); 
+
+            enemies.forEach(enemy => {
+                enemy.lookAt(camera.position.x, enemy.position.y, camera.position.z);
+                
+                if ((time - enemy.userData.lastShot) / 1000 >= fireRate) {
+                    shootProjectile(enemy);
+                    enemy.userData.lastShot = time;
+                }
+                
+                // Movement logic (Wander)
+                if (enemy.position.distanceTo(enemy.userData.targetPosition) < 5) {
+                    const newX = THREE.MathUtils.randFloat(-200, 200);
+                    const newZ = THREE.MathUtils.randFloat(-200, 200);
+                    enemy.userData.targetPosition.set(newX, enemy.position.y, newZ);
+                }
+                
+                const moveDirection = enemy.userData.targetPosition.clone().sub(enemy.position).normalize();
+                
+                // Collision check for enemy movement
+                const proposedNewPos = enemy.position.clone().addScaledVector(moveDirection, movementSpeed * delta);
+                if (!checkEnemyCollision(proposedNewPos)) {
+                    enemy.position.copy(proposedNewPos);
+                } else {
+                    // Change target immediately if collision occurs
+                    enemy.userData.targetPosition.set(
+                        THREE.MathUtils.randFloat(-200, 200),
+                        enemy.position.y,
+                        THREE.MathUtils.randFloat(-200, 200)
+                    );
+                }
+            });
+        }
+
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+        animate();
+        
+    </script>
+</body>
+</html>

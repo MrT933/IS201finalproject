@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Minesweeper</title>
+    <style>
+        /* --- CSS Variables for Soft, Classic Styling --- */
+        :root {
+            /* General Theme Colors (Soft Green/Beige) */
+            --color-bg-primary: #d5d1c2; 
+            --color-bg-secondary: #f0f0e0; 
+            --color-text-dark: #2c2c2c; 
+            --color-border-dark: #808080; 
+            
+            /* Game Board Colors */
+            --color-tile-unrevealed: #c6c6c6; 
+            --color-tile-hover: #dadada;
+            --color-tile-revealed: #e0e0e0; 
+            --color-board-shadow: rgba(0, 0, 0, 0.4);
+            
+            /* Accent & Alert Colors */
+            --color-flag: #ffc107; 
+            --color-bomb: #a30000; 
+            --color-win: #008000; 
+            
+            /* Number Colors (Minesweeper classic) */
+            --color-num-1: #0000ff;
+            --color-num-2: #008000;
+            --color-num-3: #ff0000;
+            --color-num-4: #000080;
+            --color-num-5: #800000;
+            --color-num-6: #008080;
+            --color-num-7: #000000;
+            --color-num-8: #808080;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--color-bg-primary);
+            color: var(--color-text-dark);
+            margin: 0;
+            padding-top: 20px;
+        }
+
+        h1 {
+            color: var(--color-num-3); 
+            text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.5);
+            margin-bottom: 5px;
+        }
+
+        /* --- New Game Controls / Messages Container --- */
+        #top-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+        }
+        
+        #difficulty-control {
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background-color: var(--color-bg-secondary);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--color-border-dark);
+        }
+
+        #difficulty-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid var(--color-border-dark);
+            font-size: 1em;
+            margin-left: 10px;
+            background-color: white;
+            color: var(--color-text-dark);
+        }
+        
+        /* --- Game End Message Style --- */
+        #game-status {
+            display: none; /* Hidden by default, shown on game end */
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        #game-status.visible {
+            display: flex;
+        }
+
+        #game-status h2 {
+            margin: 0 0 10px 0;
+            font-size: 1.8em;
+        }
+
+        #try-again-button {
+            padding: 8px 15px;
+            font-size: 1em;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        
+        /* Specific game status styling */
+        .win-message { 
+            background-color: #e6ffe6; 
+            border: 2px solid var(--color-win);
+        }
+        .win-message h2 { color: var(--color-win); }
+        .win-message #try-again-button { background-color: var(--color-win); }
+        .win-message #try-again-button:hover { background-color: #006400; }
+
+        .lose-message { 
+            background-color: #ffe6e6;
+            border: 2px solid var(--color-bomb);
+        }
+        .lose-message h2 { color: var(--color-bomb); }
+        .lose-message #try-again-button { background-color: var(--color-bomb); }
+        .lose-message #try-again-button:hover { background-color: #800000; }
+
+
+        /* --- Main Game Layout --- */
+        #game-container {
+            display: flex;
+            gap: 20px;
+            background-color: var(--color-bg-secondary);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 6px 12px var(--color-board-shadow);
+        }
+
+        #scoreboard {
+            width: 200px;
+            padding: 15px;
+            background-color: var(--color-tile-revealed);
+            border-radius: 8px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+            color: var(--color-text-dark);
+        }
+
+        #scoreboard h3 {
+            margin-top: 0;
+            color: var(--color-win);
+            border-bottom: 2px solid var(--color-border-dark);
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+
+        #score-display, #high-score-display {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        #game-board {
+            display: grid;
+            border: 3px solid var(--color-border-dark);
+            box-shadow: 0 0 10px var(--color-board-shadow);
+            background-color: #fff;
+            /* FIX: Set a minimum size based on largest difficulty to prevent collapse */
+            min-width: 500px; 
+            min-height: 620px; 
+        }
+
+        /* --- Tile Styling (Unchanged) --- */
+        .tile {
+            width: 30px;
+            height: 30px;
+            background-color: var(--color-tile-unrevealed);
+            border: 1px solid #777;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.1em;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s;
+            color: var(--color-text-dark);
+        }
+
+        .tile:hover:not(.revealed, .flagged, .game-over .tile) {
+            background-color: var(--color-tile-hover);
+        }
+        
+        /* Disable interaction when game is over */
+        .game-over .tile {
+            cursor: default !important;
+            pointer-events: none !important;
+        }
+
+        .revealed {
+            background-color: var(--color-tile-revealed);
+            border: 1px solid #999;
+            cursor: default;
+        }
+
+        /* Number Colors */
+        .number-1 { color: var(--color-num-1); }
+        .number-2 { color: var(--color-num-2); }
+        .number-3 { color: var(--color-num-3); }
+        .number-4 { color: var(--color-num-4); }
+        .number-5 { color: var(--color-num-5); }
+        .number-6 { color: var(--color-num-6); }
+        .number-7 { color: var(--color-num-7); }
+        .number-8 { color: var(--color-num-8); }
+
+        .bomb { 
+            background-color: var(--color-bomb) !important; 
+            color: white !important; 
+            font-size: 1.5em;
+        }
+        .flagged { 
+            background-color: var(--color-flag) !important; 
+            color: var(--color-text-dark) !important; 
+            font-size: 1.5em; 
+        }
+
+        /* --- Primary Restart Button (at the bottom) --- */
+        #main-reset-button {
+            padding: 10px 20px;
+            font-size: 1em;
+            margin-top: 20px;
+            cursor: pointer;
+            background-color: var(--color-win);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+
+        #main-reset-button:hover {
+            background-color: #006400; /* Darker green */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>💣 Ultimate Minesweeper</h1>
+
+    <div id="top-controls">
+        <div id="difficulty-control">
+            <label for="difficulty-select">Select Difficulty:</label>
+            <select id="difficulty-select">
+                <option value="easy">Easy (8x8, 10 Mines)</option>
+                <option value="intermediate" selected>Intermediate (10x10, 15 Mines)</option>
+                <option value="hard">Hard (16x16, 40 Mines)</option>
+                <option value="obscene">Obscene (20x25, 100 Mines)</option>
+            </select>
+        </div>
+
+        <div id="game-status">
+            <h2 id="message"></h2>
+            <button id="try-again-button">Try Again</button>
+        </div>
+    </div>
+    
+    <div id="game-container">
+        <div id="scoreboard">
+            <h3>📊 Scoreboard</h3>
+            <div id="score-display">Score: 0</div>
+            <div id="high-score-display">High Score: 0</div>
+            <p>Right-click (or long press) to Flag 🚩</p>
+        </div>
+        <div id="game-board">
+            </div>
+    </div>
+
+    <button id="main-reset-button">Restart Game (Full Reset)</button>
+
+    <audio id="sound-reveal-tile" preload="auto">
+        <source src="data:audio/wav;base64,UklGRtDGAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhRNDGAAApGQAAABgYABgYAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwMAAAAAAwwAAAByZWdpb29yCm1pbmVzd2VlcGVyIHdpdGggY29sb3I=" type="audio/wav">
+    </audio>
+
+    <script>
+        // --- Game Configuration Profiles ---
+        const DIFFICULTY_PROFILES = {
+            easy: { ROWS: 8, COLS: 8, BOMB_COUNT: 10 },
+            intermediate: { ROWS: 10, COLS: 10, BOMB_COUNT: 15 },
+            hard: { ROWS: 16, COLS: 16, BOMB_COUNT: 40 },
+            obscene: { ROWS: 20, COLS: 25, BOMB_COUNT: 100 }
+        };
+
+        // --- State Variables (Defined Globally) ---
+        let ROWS, COLS, BOMB_COUNT;
+        let board = [];
+        let isGameOver = false;
+        let score = 0;
+        let tilesRevealed = 0;
+        let nonBombTilesToWin;
+
+        // --- DOM Elements ---
+        const boardElement = document.getElementById('game-board');
+        const scoreDisplay = document.getElementById('score-display');
+        const highScoreDisplay = document.getElementById('high-score-display');
+        const messageElement = document.getElementById('message');
+        const resetButton = document.getElementById('main-reset-button'); 
+        const tryAgainButton = document.getElementById('try-again-button'); 
+        const gameStatusElement = document.getElementById('game-status'); 
+        const difficultySelect = document.getElementById('difficulty-select');
+        
+        // --- Sound Effects ---
+        const soundRevealTile = document.getElementById('sound-reveal-tile');
+        const soundExplosion = document.getElementById('sound-explosion');
+
+        // Helper function to play sound (resets position before playing)
+        function playSound(audioElement) {
+            if (audioElement) {
+                audioElement.currentTime = 0;
+                audioElement.play().catch(e => console.error("Audio playback failed (usually related to user gesture requirements):", e));
+            }
+        }
+
+        // --- Core Game Logic Functions ---
+
+        function initGame() {
+            // 1. Load Configuration
+            const selectedDifficulty = difficultySelect.value;
+            const config = DIFFICULTY_PROFILES[selectedDifficulty];
+
+            ROWS = config.ROWS;
+            COLS = config.COLS;
+            BOMB_COUNT = config.BOMB_COUNT;
+
+            // 2. Reset State
+            isGameOver = false;
+            score = 0;
+            tilesRevealed = 0;
+            nonBombTilesToWin = (ROWS * COLS) - BOMB_COUNT;
+            board = [];
+
+            // 3. Reset UI/Scoreboard
+            boardElement.innerHTML = '';
+            boardElement.className = ''; 
+            gameStatusElement.classList.remove('visible', 'win-message', 'lose-message'); 
+            messageElement.textContent = '';
+            updateScore(0);
+            loadHighScore(); 
+            
+            // Set grid dimensions dynamically (CSS Grid)
+            boardElement.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+
+            // 4. Initialize Board Data Structure
+            for (let r = 0; r < ROWS; r++) {
+                board[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    board[r][c] = {
+                        isBomb: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        adjacentBombs: 0,
+                        row: r,
+                        col: c
+                    };
+                }
+            }
+
+            // 5. Place bombs and calculate adjacent counts
+            placeBombs();
+            calculateAdjacentBombs();
+
+            // 6. Render initial board
+            renderBoard();
+        }
+
+        function placeBombs() {
+            let bombsPlaced = 0;
+            while (bombsPlaced < BOMB_COUNT) {
+                const r = Math.floor(Math.random() * ROWS);
+                const c = Math.floor(Math.random() * COLS);
+
+                if (!board[r][c].isBomb) {
+                    board[r][c].isBomb = true;
+                    bombsPlaced++;
+                }
+            }
+        }
+
+        function calculateAdjacentBombs() {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (!board[r][c].isBomb) {
+                        let count = 0;
+                        getNeighbors(r, c).forEach(neighbor => {
+                            if (board[neighbor.r][neighbor.c].isBomb) {
+                                count++;
+                            }
+                        });
+                        board[r][c].adjacentBombs = count;
+                    }
+                }
+            }
+        }
+
+        function getNeighbors(r, c) {
+            const neighbors = [];
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    if (i === 0 && j === 0) continue;
+                    const newR = r + i;
+                    const newC = c + j;
+
+                    if (newR >= 0 && newR < ROWS && newC >= 0 && newC < COLS) {
+                        neighbors.push({ r: newR, c: newC });
+                    }
+                }
+            }
+            return neighbors;
+        }
+
+        function renderBoard() {
+            boardElement.innerHTML = ''; 
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const tile = document.createElement('div');
+                    tile.classList.add('tile');
+                    tile.dataset.row = r;
+                    tile.dataset.col = c;
+
+                    const cell = board[r][c];
+                    
+                    if (cell.isRevealed) {
+                        tile.classList.add('revealed');
+                        if (cell.isBomb) {
+                            tile.textContent = '💣';
+                            tile.classList.add('bomb');
+                        } else if (cell.adjacentBombs > 0) {
+                            tile.textContent = cell.adjacentBombs;
+                            tile.classList.add(`number-${cell.adjacentBombs}`);
+                        }
+                    } else if (cell.isFlagged) {
+                        tile.textContent = '🚩';
+                        tile.classList.add('flagged');
+                    }
+
+                    // Attach event listeners
+                    tile.addEventListener('click', () => handleTileClick(r, c));
+                    tile.addEventListener('contextmenu', (e) => handleFlag(e, r, c));
+                    
+                    boardElement.appendChild(tile);
+                }
+            }
+        }
+        
+        // Recursive function to reveal adjacent empty tiles
+        function revealTile(r, c) {
+            // Bounds check
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+                return;
+            }
+            
+            const cell = board[r][c];
+            
+            // Stop conditions
+            if (cell.isRevealed || cell.isFlagged || isGameOver) {
+                return;
+            }
+
+            cell.isRevealed = true;
+            tilesRevealed++;
+            updateScore(score + 10);
+            
+            // Play sound effect for tile reveal/click
+            playSound(soundRevealTile);
+
+            // Check win condition
+            if (tilesRevealed === nonBombTilesToWin) {
+                endGame(true);
+                return;
+            }
+
+            // If it's a number tile, just reveal it and stop recursion
+            if (cell.adjacentBombs > 0) {
+                return;
+            }
+
+            // If it's a blank tile (adjacentBombs === 0), recursively check neighbors
+            if (cell.adjacentBombs === 0) {
+                getNeighbors(r, c).forEach(neighbor => {
+                    revealTile(neighbor.r, neighbor.c);
+                });
+            }
+        }
+
+        function handleTileClick(r, c) {
+            if (isGameOver || board[r][c].isRevealed || board[r][c].isFlagged) {
+                return;
+            }
+
+            const cell = board[r][c];
+            
+            if (cell.isBomb) {
+                endGame(false);
+            } else {
+                revealTile(r, c);
+                renderBoard(); // Re-render to show revealed tiles
+            }
+        }
+
+        function handleFlag(event, r, c) {
+            event.preventDefault(); // Prevent the default context menu
+            if (isGameOver || board[r][c].isRevealed) {
+                return;
+            }
+
+            const cell = board[r][c];
+            cell.isFlagged = !cell.isFlagged;
+            renderBoard(); // Re-render to show/hide flag
+        }
+
+        function endGame(won) {
+            isGameOver = true;
+            boardElement.classList.add('game-over');
+            
+            // Show and style the game status element
+            gameStatusElement.classList.add('visible');
+
+            if (won) {
+                messageElement.textContent = '🥳 YOU WON! 🎉';
+                gameStatusElement.classList.add('win-message');
+                tryAgainButton.textContent = 'Play Again';
+                updateHighScore(score);
+            } else {
+                messageElement.textContent = '💥 GAME OVER! You hit a bomb.';
+                gameStatusElement.classList.add('lose-message');
+                tryAgainButton.textContent = 'Try Again';
+                playSound(soundExplosion); // Play explosion sound
+                
+                // Reveal all bombs
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (board[r][c].isBomb) {
+                            board[r][c].isRevealed = true;
+                        }
+                    }
+                }
+            }
+            // Final render to show all bombs/win state
+            renderBoard();
+        }
+
+        // --- Score Management Functions ---
+
+        function updateScore(newScore) {
+            score = newScore;
+            scoreDisplay.textContent = `Score: ${score}`;
+        }
+
+        function getHighScoreKey() {
+             return `minesweeperHighScore_${difficultySelect.value}`;
+        }
+
+        function loadHighScore() {
+            const key = getHighScoreKey();
+            const savedHighScore = localStorage.getItem(key);
+            if (savedHighScore) {
+                highScoreDisplay.textContent = `High Score: ${savedHighScore}`;
+            } else {
+                highScoreDisplay.textContent = `High Score: 0`;
+            }
+        }
+
+        function updateHighScore(finalScore) {
+            const key = getHighScoreKey();
+            let currentHighScore = parseInt(localStorage.getItem(key)) || 0;
+            if (finalScore > currentHighScore) {
+                localStorage.setItem(key, finalScore);
+                loadHighScore(); // Update the display
+            }
+        }
+
+        // --- Event Listeners and Initialization ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const mainResetButton = document.getElementById('main-reset-button');
+            
+            mainResetButton.addEventListener('click', initGame);
+            tryAgainButton.addEventListener('click', initGame);
+            difficultySelect.addEventListener('change', initGame);
+            
+            initGame();
+        });
+
+    </script>
+</body>
+</html>
